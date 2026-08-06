@@ -42,7 +42,6 @@ app.post('/webhook', async (req, res) => {
 
                 console.log(`Received message: "${messageText}" from ${senderId}`);
 
-                // Gen-Z female character wala AI response
                 const aiReply = await getGenZAIResponse(messageText);
 
                 console.log(`Generated AI Reply: "${aiReply}"`);
@@ -70,7 +69,7 @@ async function getGenZAIResponse(userMessage) {
                     content: userMessage
                 }
             ],
-            model: "llama3-8b-8192",
+            model: "llama-3.1-8b-instant",
         });
 
         return completion.choices[0]?.message?.content || "Hey! Wsg?";
