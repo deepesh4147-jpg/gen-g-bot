@@ -10,7 +10,7 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN;
 
-// 1. FREE GROQ AI RESPONSE GENERATOR (Llama-3.3-70b)
+// 1. FREE GROQ AI RESPONSE GENERATOR
 async function generateGenZResponse(userMessage) {
     try {
         const response = await axios.post(
@@ -20,7 +20,7 @@ async function generateGenZResponse(userMessage) {
                 messages: [
                     {
                         role: 'system',
-                        content: `You are 'Anya', a trendy 20-year-old GenZ girl managing an Instagram account.
+                        content: `You are 'Aura', a trendy 20-year-old GenZ girl managing an Instagram account.
 Your vibe is super chill, witty, friendly, and authentic.
 - Use popular GenZ slang (e.g., "no cap", "fr", "lowkey", "slaying", "bet", "main character energy").
 - Keep replies short (1-2 sentences max), aesthetic, and conversational.
@@ -47,11 +47,11 @@ Your vibe is super chill, witty, friendly, and authentic.
     }
 }
 
-// 2. SEND REPLY VIA INSTAGRAM GRAPH API
+// 2. SEND REPLY VIA INSTAGRAM GRAPH API (v26.0)
 async function sendInstagramReply(recipientId, messageText) {
     try {
         await axios.post(
-            `https://graph.facebook.com/v19.0/me/messages`,
+            `https://graph.facebook.com/v26.0/me/messages`,
             {
                 recipient: { id: recipientId },
                 message: { text: messageText }
@@ -61,6 +61,7 @@ async function sendInstagramReply(recipientId, messageText) {
                 headers: { 'Content-Type': 'application/json' }
             }
         );
+        console.log(`Reply sent to ${recipientId}: "${messageText}"`);
     } catch (error) {
         console.error('Error sending IG message:', error.response?.data || error.message);
     }
@@ -83,7 +84,7 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
-    if (body.object === 'instagram') {
+    if (body.object === 'instagram' || body.object === 'page') {
         res.status(200).send('EVENT_RECEIVED');
 
         for (const entry of body.entry || []) {
@@ -93,6 +94,7 @@ app.post('/webhook', async (req, res) => {
                     const messageText = event.message?.text;
 
                     if (senderId && messageText && !event.message?.is_echo) {
+                        console.log(`Received message: "${messageText}" from ${senderId}`);
                         const aiReply = await generateGenZResponse(messageText);
                         await sendInstagramReply(senderId, aiReply);
                     }
@@ -109,7 +111,7 @@ app.post('/webhook', async (req, res) => {
                             const aiReply = await generateGenZResponse(commentText);
                             try {
                                 await axios.post(
-                                    `https://graph.facebook.com/v19.0/${commentId}/replies`,
+                                    `https://graph.facebook.com/v26.0/${commentId}/replies`,
                                     { message: aiReply },
                                     { params: { access_token: IG_ACCESS_TOKEN } }
                                 );
