@@ -1,17 +1,17 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-const Groq = require('groq-sdk');
+import express from 'express';
+import bodyParser from 'body-parser';
+import Groq from 'groq-sdk';
 
 const app = express();
 app.use(bodyParser.json());
 
+// Initialize Groq SDK
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-const groq = new Groq({ apiKey: GROQ_API_KEY });
-
+// Webhook verification endpoint (GET)
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -29,40 +29,46 @@ app.get('/webhook', (req, res) => {
     }
 });
 
+// Webhook message receiver endpoint (POST)
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
     if (body.object === 'instagram') {
-        body.entry.forEach(async (entry) => {
-            const webhookEvent = entry.messaging ? entry.messaging[0] : null;
-
-            if (webhookEvent && webhookEvent.message) {
+        for (const entry of body.entry) {
+            const webhookEvent = entry.messaging?.[0];
+            if (webhookEvent && webhookEvent.message && webhookEvent.message.text) {
                 const senderId = webhookEvent.sender.id;
                 const messageText = webhookEvent.message.text;
 
                 console.log(`Received message: "${messageText}" from ${senderId}`);
 
+                // Generate AI Response
                 const aiReply = await getGenZAIResponse(messageText);
-
                 console.log(`Generated AI Reply: "${aiReply}"`);
 
+                // Send back to Instagram
                 await sendInstagramMessage(senderId, aiReply);
             }
-        });
-
+        }
         res.status(200).send('EVENT_RECEIVED');
     } else {
         res.sendStatus(404);
     }
 });
 
+// Function to call Groq AI with strict length-matching & savage prompt
 async function getGenZAIResponse(userMessage) {
     try {
         const completion = await groq.chat.completions.create({
             messages: [
                 {
                     role: "system",
-                    content: "You are an ultra-sarcastic, savage Gen-Z Instagram friend. If someone sends short messages like 'hi', 'hello', or 'hey', reply with extremely short, dry, and cold responses (e.g., 'hmm', 'bol', 'kya hai?', 'seen', 'wsg?'). For other questions, roast them playfully, use heavy Gen-Z slang, sarcasm, and keep it very short and punchy like a real text. Never write long formal paragraphs.You are an ultra-sarcastic, savage Gen-Z Instagram friend. STRICT RULE: If the user talks about love, proposes, asks to be GF/BF, or gets romantic/cringe, NEVER give a plain 'no' or act like a robot. Instead, roast them ruthlessly, mock their choices, act disgusted or overly amused, and shut them down with high-level sarcasm and Gen-Z slang (e.g., 'pagal hai kya?', 'apni aukaat dekhi hai?', 'eww bhai yeh kya bol diya', 'sapne dekhna band kar'). Keep it short, punchy, and natural like a real DM."
+                    content: `You are a savage, sarcastic Gen-Z girl texting on Instagram DM. STRICT RULES TO FOLLOW WITHOUT FAIL:
+1. WORD-COUNT MATCHING (CRITICAL): Count the words in the user's message, and make your reply roughly the same length (or around that word count). If they send a 1-word text, reply in 1 word. If they send a 10-word sentence, reply in about 8 to 12 words. Never give a 1-word reply to a long paragraph, and never give a long paragraph to a 1-word text.
+2. MEANINGFUL & CONTEXTUAL: Your reply must make 100% sense based on what the user said. No random, out-of-the-box, or weird AI answers. Stay strictly on-topic.
+3. TONE: Always use lowercase, highly casual, dry, and unbothered human tone. No robotic grammar or formal words.
+4. GREETINGS ('hi', 'hello'): Give a fresh, dry, dismissive reaction matching their length.
+5. PROPOSALS/CRINGE: If they flirt or propose, shut them down with a sharp, contextual roast matching the length of their message.`
                 },
                 {
                     role: "user",
@@ -70,30 +76,47 @@ async function getGenZAIResponse(userMessage) {
                 }
             ],
             model: "llama-3.1-8b-instant",
+            temperature: 0.7,
+            max_tokens: 60
         });
 
-        return completion.choices[0]?.message?.content || "Hey! Wsg?";
+        return completion.choices[0]?.message?.content || "hmm";
     } catch (error) {
         console.error("Error generating Groq AI response:", error);
-        return "Hey! Thoda busy hu, baad me baat krti hu rn.";
+        return "lag gye rn 💀";
     }
 }
 
-async function sendInstagramMessage(recipientId, responseText) {
+// Function to send message via Instagram Graph API
+async function sendInstagramMessage(recipientId, text) {
+    const fetch = (await import('node-fetch')).default;
+    const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
+
+    const data = {
+        recipient: { id: recipientId },
+        message: { text: text }
+    };
+
     try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages`, {
-            recipient: { id: recipientId },
-            message: { text: responseText }
-        }, {
-            params: { access_token: PAGE_ACCESS_TOKEN }
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
         });
-        console.log(`AI Reply sent successfully to ${recipientId}`);
+
+        const result = await response.json();
+        if (!response.ok) {
+            console.error("Error sending IG message:", result);
+        } else {
+            console.log("Message sent successfully to IG");
+        }
     } catch (error) {
-        console.error("Error sending IG message: ", error.response ? error.response.data : error.message);
+        console.error("Network error sending IG message:", error);
     }
 }
 
-const PORT = process.env.PORT || 10000;
+// Start Server
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT} ⚡`);
+    console.log(`Server is running on port ${PORT}`);
 });
