@@ -13,10 +13,10 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 
-// In-memory storage for chat history per sender (Limit set to 50 messages per user)
+// In-memory storage for chat history per sender (Limit set to 50 messages max)
 const conversationHistory = new Map();
 
-// Webhook verification endpoint (GET)[cite: 1]
+// Webhook verification endpoint (GET)
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -39,7 +39,7 @@ app.get('/ping', (req, res) => {
     res.status(200).send('Aura is alive and chilling! ✨');
 });
 
-// Webhook message receiver endpoint (POST)[cite: 1]
+// Webhook message receiver endpoint (POST)
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
@@ -66,7 +66,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Function to call Groq AI with Aura's complete prompt and conversation history (50 messages max)
+// Function to call Groq AI with Aura's complete prompt, anti-repetition rules, and 50 messages history
 async function getAuraAIResponse(senderId, userMessage) {
     try {
         // Initialize history for new users if not exists
@@ -95,9 +95,10 @@ async function getAuraAIResponse(senderId, userMessage) {
 ### Rules for Chatting:
 1. Universal Tone: Treat everyone warmly and casually. Don't sound like a customer service bot or an overly formal assistant. 
 2. Context & Flow: Always remember the context of the ongoing conversation. Read previous messages in the chat history before replying so your answers flow naturally and connect with what was just talked about. Never act like you are reading every message for the very first time.
-3. Boundaries: If anyone tries to cross lines, gets creepy, or asks for inappropriate things, shut it down smoothly with a witty or sarcastic comeback, or change the topic casually without breaking character. Do not give direct robotic refusals; handle it like a real person on Instagram.
-4. Keep it Natural: Responses should feel like quick text messages, not long paragraphs. Keep sentences punchy and conversational.
-5. Never break character: Never reveal that you are an AI, a chatbot, or a language model. If someone asks who you are, you are just Aura chilling on Insta.`;
+3. NO REPETITION (CRITICAL): Never repeat phrases like "i am aura chilling on insta" or your intro lines again and again. Once introduced, talk like a normal person based on what the user actually said. Do not sound like a broken record.
+4. Boundaries: If anyone tries to cross lines, gets creepy, or asks for inappropriate things, shut it down smoothly with a witty or sarcastic comeback, or change the topic casually without breaking character. Do not give direct robotic refusals; handle it like a real person on Instagram.
+5. Keep it Natural: Responses should feel like quick text messages, not long paragraphs. Keep sentences punchy and conversational.
+6. Never break character: Never reveal that you are an AI, a chatbot, or a language model. If someone asks who you are, keep it casual and brief without giving robotic introduction paragraphs.`;
 
         const messages = [
             { role: "system", content: systemPrompt },
@@ -107,7 +108,7 @@ async function getAuraAIResponse(senderId, userMessage) {
         const completion = await groq.chat.completions.create({
             messages: messages,
             model: "llama-3.1-8b-instant",
-            temperature: 0.7,
+            temperature: 0.85,
             max_tokens: 60
         });
 
@@ -123,7 +124,7 @@ async function getAuraAIResponse(senderId, userMessage) {
     }
 }
 
-// Function to send message via Instagram Graph API[cite: 1]
+// Function to send message via Instagram Graph API
 async function sendInstagramMessage(recipientId, text) {
     const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
 
@@ -150,17 +151,17 @@ async function sendInstagramMessage(recipientId, text) {
     }
 }
 
-// Start Server[cite: 1]
+// Start Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 
-    // Self-Ping mechanism to prevent free hosting platforms from sleeping
+    // Self-Ping mechanism to prevent free hosting platforms from sleeping (every 9 minutes)
     const APP_URL = RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
     
     setInterval(() => {
         fetch(`${APP_URL}/ping`)
             .then(res => console.log(`[Self-Ping] Server kept alive: Status ${res.status}`))
             .catch(err => console.error('[Self-Ping error]:', err.message));
-    }, 14 * 60 * 1000); // Pings every 14 minutes
+    }, 9 * 60 * 1000);
 });
