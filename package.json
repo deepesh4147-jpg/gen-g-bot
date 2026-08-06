@@ -1,6 +1,7 @@
 {
   "name": "gen-g-bot",
   "version": "1.0.0",
+  "description": "Aura - Gen Z Instagram Chatbot",
   "type": "module",
   "main": "server.js",
   "scripts": {
