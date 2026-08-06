@@ -10,6 +10,11 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN;
 
+// 0. HEALTH CHECK ENDPOINT FOR CRON-JOB (Prevents Sleep)
+app.get('/ping', (req, res) => {
+    res.status(200).send("Bot is awake and slaying! ✨");
+});
+
 // 1. FREE GROQ AI RESPONSE GENERATOR
 async function generateGenZResponse(userMessage) {
     try {
