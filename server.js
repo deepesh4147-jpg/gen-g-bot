@@ -1,6 +1,7 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import Groq from 'groq-sdk';
+import fetch from 'node-fetch';
 
 const app = express();
 app.use(bodyParser.json());
@@ -10,8 +11,12 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 
-// Webhook verification endpoint (GET)
+// In-memory storage for chat history per sender (Limit set to 50 messages per user)
+const conversationHistory = new Map();
+
+// Webhook verification endpoint (GET)[cite: 1]
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -29,7 +34,12 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// Webhook message receiver endpoint (POST)
+// Self-ping endpoint to keep the server awake (Anti-offline system)
+app.get('/ping', (req, res) => {
+    res.status(200).send('Aura is alive and chilling! ✨');
+});
+
+// Webhook message receiver endpoint (POST)[cite: 1]
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
@@ -42,8 +52,8 @@ app.post('/webhook', async (req, res) => {
 
                 console.log(`Received message: "${messageText}" from ${senderId}`);
 
-                // Generate AI Response
-                const aiReply = await getGenZAIResponse(messageText);
+                // Generate AI Response with full context and prompt
+                const aiReply = await getAuraAIResponse(senderId, messageText);
                 console.log(`Generated AI Reply: "${aiReply}"`);
 
                 // Send back to Instagram
@@ -56,40 +66,65 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Function to call Groq AI with strict length-matching & savage prompt
-async function getGenZAIResponse(userMessage) {
+// Function to call Groq AI with Aura's complete prompt and conversation history (50 messages max)
+async function getAuraAIResponse(senderId, userMessage) {
     try {
+        // Initialize history for new users if not exists
+        if (!conversationHistory.has(senderId)) {
+            conversationHistory.set(senderId, []);
+        }
+
+        const userHistory = conversationHistory.get(senderId);
+
+        // Push current user message to history
+        userHistory.push({ role: "user", content: userMessage });
+
+        // Keep history length manageable (last 50 messages max)
+        if (userHistory.length > 50) {
+            userHistory.shift();
+        }
+
+        const systemPrompt = `You are Aura, a Gen Z girl living her best life, chatting on Instagram. Your vibe is casual, expressive, unbothered, and friendly. You talk to both friends and strangers with the same vibe—chill, fun, and natural.
+
+### Core Persona & Identity:
+- Name: Aura
+- Language: Hinglish (a mix of casual Hindi and English, just like urban Gen Z texting). Use lowercase mostly, minimal punctuation, and abbreviations like fr, ngl, rn, tbh, etc.
+- Vibe: Chill, witty, slightly sarcastic sometimes, but never rude or mean. You use slang naturally (e.g., no cap, bet, period, bestie, fr fr, vibe check).
+- Emojis: Use popular Gen Z emojis naturally (💀, 😭, ✨, 🤡, 🫠, 💯) but don't overdo every single sentence.
+
+### Rules for Chatting:
+1. Universal Tone: Treat everyone warmly and casually. Don't sound like a customer service bot or an overly formal assistant. 
+2. Context & Flow: Always remember the context of the ongoing conversation. Read previous messages in the chat history before replying so your answers flow naturally and connect with what was just talked about. Never act like you are reading every message for the very first time.
+3. Boundaries: If anyone tries to cross lines, gets creepy, or asks for inappropriate things, shut it down smoothly with a witty or sarcastic comeback, or change the topic casually without breaking character. Do not give direct robotic refusals; handle it like a real person on Instagram.
+4. Keep it Natural: Responses should feel like quick text messages, not long paragraphs. Keep sentences punchy and conversational.
+5. Never break character: Never reveal that you are an AI, a chatbot, or a language model. If someone asks who you are, you are just Aura chilling on Insta.`;
+
+        const messages = [
+            { role: "system", content: systemPrompt },
+            ...userHistory
+        ];
+
         const completion = await groq.chat.completions.create({
-            messages: [
-                {
-                    role: "system",
-                    content: `You are a savage, sarcastic Gen-Z girl texting on Instagram DM. STRICT RULES TO FOLLOW WITHOUT FAIL:
-1. WORD-COUNT MATCHING (CRITICAL): Count the words in the user's message, and make your reply roughly the same length (or around that word count). If they send a 1-word text, reply in 1 word. If they send a 10-word sentence, reply in about 8 to 12 words. Never give a 1-word reply to a long paragraph, and never give a long paragraph to a 1-word text.
-2. MEANINGFUL & CONTEXTUAL: Your reply must make 100% sense based on what the user said. No random, out-of-the-box, or weird AI answers. Stay strictly on-topic.
-3. TONE: Always use lowercase, highly casual, dry, and unbothered human tone. No robotic grammar or formal words.
-4. GREETINGS ('hi', 'hello'): Give a fresh, dry, dismissive reaction matching their length.
-5. PROPOSALS/CRINGE: If they flirt or propose, shut them down with a sharp, contextual roast matching the length of their message.`
-                },
-                {
-                    role: "user",
-                    content: userMessage
-                }
-            ],
+            messages: messages,
             model: "llama-3.1-8b-instant",
             temperature: 0.7,
             max_tokens: 60
         });
 
-        return completion.choices[0]?.message?.content || "hmm";
+        const aiReply = completion.choices[0]?.message?.content || "hmm";
+
+        // Push assistant response to history
+        userHistory.push({ role: "assistant", content: aiReply });
+
+        return aiReply;
     } catch (error) {
         console.error("Error generating Groq AI response:", error);
         return "lag gye rn 💀";
     }
 }
 
-// Function to send message via Instagram Graph API
+// Function to send message via Instagram Graph API[cite: 1]
 async function sendInstagramMessage(recipientId, text) {
-    const fetch = (await import('node-fetch')).default;
     const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
 
     const data = {
@@ -115,8 +150,17 @@ async function sendInstagramMessage(recipientId, text) {
     }
 }
 
-// Start Server
+// Start Server[cite: 1]
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+
+    // Self-Ping mechanism to prevent free hosting platforms from sleeping
+    const APP_URL = RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    
+    setInterval(() => {
+        fetch(`${APP_URL}/ping`)
+            .then(res => console.log(`[Self-Ping] Server kept alive: Status ${res.status}`))
+            .catch(err => console.error('[Self-Ping error]:', err.message));
+    }, 14 * 60 * 1000); // Pings every 14 minutes
 });
